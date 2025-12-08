@@ -1,0 +1,77 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+.env
+.venv/
+venv/
+ENV/
+
+# =========================
+# Virtual environments
+# =========================
+pip-wheel-metadata/
+share/python-wheels/
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*.bak
+*.tmp
+.idea/
+.vscode/
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# Downloaded content
+# =========================
+downloads/
+*.part
+
+# =========================
+# Build / Distribution
+# =========================
+build/
+dist/
+*.spec
+
+# =========================
+# PyInstaller / Nuitka
+# =========================
+*.exe
+*.dll
+*.manifest
+
+# =========================
+# GUI / Tkinter DnD
+# =========================
+tkinterdnd2/
+
+# =========================
+# Cache / Temp
+# =========================
+.cache/
+tmp/
+temp/
+
+# =========================
+# Secrets
+# =========================
+cookies.txt
+session.txt
+.env.local
