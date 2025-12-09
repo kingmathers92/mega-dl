@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import re
 import requests
 from urllib.parse import urlparse
 from tqdm import tqdm
@@ -20,22 +21,32 @@ def extract_album_id(url: str) -> str:
         return parts[1]
     raise ValueError("Invalid Pixeldrain album URL")
 
-def get_album_files(album_id: str):
+def safe_folder_name(name: str) -> str:
+    """
+    Make folder name safe for Windows/Linux/macOS
+    """
+    name = re.sub(r'[<>:"/\\|?*]', '', name)
+    name = name.strip()
+    return name if name else "Pixeldrain Album"
+
+def get_album_data(album_id: str):
     url = f"https://pixeldrain.com/api/list/{album_id}"
     r = requests.get(url, headers=HEADERS, timeout=20)
     r.raise_for_status()
-    return r.json()["files"]
+    data = r.json()
+    return data["name"], data["files"]
 
 def download_file(file, output_dir):
     file_id = file["id"]
     name = file["name"]
     size = file["size"]
 
-    url = f"https://pixeldrain.com/api/file/{file_id}"
     path = os.path.join(output_dir, name)
 
     if os.path.exists(path):
-        return  # skip existing files
+        return
+
+    url = f"https://pixeldrain.com/api/file/{file_id}"
 
     with requests.get(url, headers=HEADERS, stream=True, timeout=60) as r:
         r.raise_for_status()
@@ -53,24 +64,33 @@ def download_file(file, output_dir):
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: pixeldrain_dl <album_url>")
+        print("Usage: python pixeldrain_dl.py <album_url>")
         sys.exit(1)
 
     album_url = sys.argv[1]
-    album_id = extract_album_id(album_url)
 
-    output_dir = f"downloads/{album_id}"
+    try:
+        album_id = extract_album_id(album_url)
+    except ValueError as e:
+        print(e)
+        sys.exit(1)
+
+    print("Fetching album info...")
+    album_name, files = get_album_data(album_id)
+
+    safe_name = safe_folder_name(album_name)
+    output_dir = os.path.join("downloads", safe_name)
     os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Fetching album {album_id}...")
-    files = get_album_files(album_id)
-    print(f"Found {len(files)} files\n")
+    print(f"\nAlbum: {album_name}")
+    print(f"Files: {len(files)}")
+    print(f"Saving to: {output_dir}\n")
 
     for file in files:
         download_file(file, output_dir)
-        time.sleep(0.5)  # rate limit (polite & safe)
+        time.sleep(0.5)  # polite rate limit
 
-    print("\n✅ All downloads complete")
+    print("\n✅ Download completed successfully")
 
 if __name__ == "__main__":
     main()
