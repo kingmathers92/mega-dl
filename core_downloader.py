@@ -10,7 +10,7 @@ HEADERS = {
     "User-Agent": "PixeldrainAlbumDownloader/2.0"
 }
 
-MAX_WORKERS = 4      # safe parallelism
+MAX_WORKERS = 3 or 4      # safe parallelism
 RATE_DELAY = 0.2    # polite delay
 
 def extract_album_id(url: str) -> str:
@@ -33,7 +33,7 @@ def get_album_data(album_id: str):
     album_name = data.get("name") or data.get("title") or f"Album_{album_id}"
     return safe_name(album_name), data.get("files", [])
 
-def download_file(file, output_dir):
+def download_file(file, output_dir, retries=5):
     file_id = file["id"]
     name = file["name"]
     size = file.get("size", 0)
@@ -41,37 +41,51 @@ def download_file(file, output_dir):
     path = os.path.join(output_dir, name)
     temp_path = path + ".part"
 
-    downloaded = 0
-    headers = HEADERS.copy()
+    if os.path.exists(path) and size > 0 and os.path.getsize(path) == size:
+        return
 
-    if os.path.exists(path) and os.path.getsize(path) == size:
-        return "skipped"
+    attempt = 0
+    while attempt < retries:
+        try:
+            headers = HEADERS.copy()
+            downloaded = 0
 
-    if os.path.exists(temp_path):
-        downloaded = os.path.getsize(temp_path)
-        headers["Range"] = f"bytes={downloaded}-"
+            if os.path.exists(temp_path):
+                downloaded = os.path.getsize(temp_path)
+                headers["Range"] = f"bytes={downloaded}-"
 
-    url = f"https://pixeldrain.com/api/file/{file_id}"
-    with requests.get(url, headers=headers, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        mode = "ab" if downloaded else "wb"
+            url = f"https://pixeldrain.com/api/file/{file_id}"
+            with requests.get(url, headers=headers, stream=True, timeout=60) as r:
+                if r.status_code == 403:
+                    raise requests.exceptions.HTTPError("403")
 
-        with open(temp_path, mode) as f, tqdm(
-            total=size,
-            initial=downloaded,
-            unit="B",
-            unit_scale=True,
-            desc=name,
-            leave=False
-        ) as bar:
-            for chunk in r.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
-                    bar.update(len(chunk))
+                r.raise_for_status()
 
-    os.replace(temp_path, path)
-    time.sleep(RATE_DELAY)
-    return "downloaded"
+                mode = "ab" if downloaded else "wb"
+                with open(temp_path, mode) as f, tqdm(
+                    total=size if size > 0 else None,
+                    initial=downloaded,
+                    unit="B",
+                    unit_scale=True,
+                    desc=name,
+                    leave=False
+                ) as bar:
+                    for chunk in r.iter_content(8192):
+                        if chunk:
+                            f.write(chunk)
+                            bar.update(len(chunk))
+
+            os.replace(temp_path, path)
+            return
+
+        except requests.exceptions.HTTPError as e:
+            attempt += 1
+            wait = 2 ** attempt
+            print(f"\n⚠ 403 for {name}, retry {attempt}/{retries} in {wait}s")
+            time.sleep(wait)
+
+    print(f"\n❌ Failed to download {name} after {retries} retries")
+
 
 def download_album(album_url: str, base_dir="downloads"):
     album_id = extract_album_id(album_url)
