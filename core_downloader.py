@@ -7,11 +7,12 @@ from tqdm import tqdm
 from urllib.parse import urlparse
 
 HEADERS = {
-    "User-Agent": "PixeldrainAlbumDownloader/2.0"
+    "User-Agent": "PixeldrainAlbumDownloader/2.1"
 }
 
-MAX_WORKERS = 3 or 4      # safe parallelism
-RATE_DELAY = 0.2    # polite delay
+MAX_WORKERS = 3        # 🔴 4 is borderline, 3 is safe
+MAX_RETRIES = 5
+RATE_DELAY = 0.3      # polite delay
 
 def extract_album_id(url: str) -> str:
     parsed = urlparse(url)
@@ -33,7 +34,7 @@ def get_album_data(album_id: str):
     album_name = data.get("name") or data.get("title") or f"Album_{album_id}"
     return safe_name(album_name), data.get("files", [])
 
-def download_file(file, output_dir, retries=5):
+def download_file(file, output_dir):
     file_id = file["id"]
     name = file["name"]
     size = file.get("size", 0)
@@ -41,11 +42,12 @@ def download_file(file, output_dir, retries=5):
     path = os.path.join(output_dir, name)
     temp_path = path + ".part"
 
+    # Already done
     if os.path.exists(path) and size > 0 and os.path.getsize(path) == size:
-        return
+        return "skipped"
 
     attempt = 0
-    while attempt < retries:
+    while attempt < MAX_RETRIES:
         try:
             headers = HEADERS.copy()
             downloaded = 0
@@ -76,16 +78,21 @@ def download_file(file, output_dir, retries=5):
                             bar.update(len(chunk))
 
             os.replace(temp_path, path)
-            return
+            time.sleep(RATE_DELAY)
+            return "downloaded"
 
-        except requests.exceptions.HTTPError as e:
+        except requests.exceptions.HTTPError:
             attempt += 1
             wait = 2 ** attempt
-            print(f"\n⚠ 403 for {name}, retry {attempt}/{retries} in {wait}s")
+            print(f"\n⚠ 403 on {name}, retry {attempt}/{MAX_RETRIES} in {wait}s")
             time.sleep(wait)
 
-    print(f"\n❌ Failed to download {name} after {retries} retries")
+        except Exception as e:
+            print(f"\n❌ Error downloading {name}: {e}")
+            return "failed"
 
+    print(f"\n❌ Gave up on {name}")
+    return "failed"
 
 def download_album(album_url: str, base_dir="downloads"):
     album_id = extract_album_id(album_url)
@@ -94,7 +101,7 @@ def download_album(album_url: str, base_dir="downloads"):
     output_dir = os.path.join(base_dir, album_name)
     os.makedirs(output_dir, exist_ok=True)
 
-    # auto-skip album
+    # Auto-skip album
     if all(
         os.path.exists(os.path.join(output_dir, f["name"]))
         and os.path.getsize(os.path.join(output_dir, f["name"])) == f.get("size", 0)
@@ -105,7 +112,19 @@ def download_album(album_url: str, base_dir="downloads"):
     results = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(download_file, f, output_dir) for f in files]
-        for future in as_completed(futures):
-            results.append(future.result())
 
-    return f"Album '{album_name}' completed"
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception as e:
+                #  SAFETY NET — should never crash now
+                print(f"\n❌ Thread error: {e}")
+
+    ok = results.count("downloaded")
+    skipped = results.count("skipped")
+    failed = results.count("failed")
+
+    return (
+        f"Album '{album_name}' completed\n"
+        f"Downloaded: {ok}, Skipped: {skipped}, Failed: {failed}"
+    )
