@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
-from pixeldrain_downloader import download_album
+from mega_dl import download_album
 
 def on_drop(event):
     url = event.data.strip()
