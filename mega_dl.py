@@ -5,6 +5,7 @@ import time
 import queue
 import threading
 import requests
+import random
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
@@ -67,47 +68,68 @@ class PixeldrainAdapter(SiteAdapter):
         j = r.json()
         return j.get("files", [])
 
-    def download_file(self, file, output_dir):
-        fid, name, size = file["id"], file["name"], file.get("size", 0)
-        path = os.path.join(output_dir, name)
-        part = path + ".part"
+    def download_file(file, output_dir):
+        file_id = file["id"]
+        name = file["name"]
+        size = file.get("size", 0)
 
-        for attempt in range(MAX_RETRIES):
+        path = os.path.join(output_dir, name)
+        temp_path = path + ".part"
+
+        if os.path.exists(path) and size > 0 and os.path.getsize(path) == size:
+            return "skipped"
+
+        attempt = 0
+        while attempt < MAX_RETRIES:
             try:
                 headers = HEADERS.copy()
+                headers["User-Agent"] = f"PixeldrainDownloader/2.1-{random.randint(1000,9999)}"
                 downloaded = 0
-                if os.path.exists(part):
-                    downloaded = os.path.getsize(part)
+
+                if os.path.exists(temp_path):
+                    downloaded = os.path.getsize(temp_path)
                     headers["Range"] = f"bytes={downloaded}-"
 
-                url = f"https://pixeldrain.com/api/file/{fid}"
+                url = f"https://pixeldrain.com/api/file/{file_id}"
                 with requests.get(url, headers=headers, stream=True, timeout=60) as r:
                     r.raise_for_status()
                     mode = "ab" if downloaded else "wb"
-                    bytes_this_sec = 0
-                    start = time.time()
-                    with open(part, mode) as f, tqdm(
-                        total=size, initial=downloaded, unit="B", unit_scale=True, desc=name, leave=False
+
+                    with open(temp_path, mode) as f, tqdm(
+                        total=size if size > 0 else None,
+                        initial=downloaded,
+                        unit="B",
+                        unit_scale=True,
+                        desc=name,
+                        leave=False
                     ) as bar:
                         for chunk in r.iter_content(8192):
-                            if chunk:
-                                f.write(chunk)
-                                bar.update(len(chunk))
-                                if SPEED_LIMIT_KB > 0:
-                                    bytes_this_sec += len(chunk)
-                                    elapsed = time.time() - start
-                                    if elapsed < 1 and bytes_this_sec > SPEED_LIMIT_KB * 1024:
-                                        time.sleep(1 - elapsed)
-                                        start = time.time()
-                                        bytes_this_sec = 0
+                            try:
+                                if chunk:
+                                    f.write(chunk)
+                                    bar.update(len(chunk))
+                            except Exception:
+                                print(f"⚠ Chunk error in {name}, continuing...")
 
-                os.replace(part, path)
-                time.sleep(RATE_DELAY)
+                os.replace(temp_path, path)
+                time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
                 return "downloaded"
+
+            except requests.exceptions.HTTPError as e:
+                attempt += 1
+                wait = 2 ** attempt + random.uniform(0.5, 1.5)
+                print(f"\n⚠ 403 or HTTP error on {name}, retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
+                time.sleep(wait)
+
             except Exception as e:
-                if attempt + 1 == MAX_RETRIES:
-                    return f"failed ({e})"
-                time.sleep(2 ** attempt)
+                attempt += 1
+                wait = 2 ** attempt + random.uniform(0.5, 1.5)
+                print(f"\n❌ Error downloading {name}: {e}, retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
+                time.sleep(wait)
+
+        print(f"\n❌ Gave up on {name}")
+        return "failed"
+
 
 # -----------------------------
 # Bunkr Adapter
