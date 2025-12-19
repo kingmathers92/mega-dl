@@ -1,6 +1,6 @@
-# MultiHost Downloader
+# MegaDL
 
-MultiHost Downloader is a fast, safe, and user-friendly tool for downloading albums from multiple file hosting services, including:
+MegaDL is a fast, safe, and user-friendly tool for downloading albums from multiple file hosting services, including:
 
 - Pixeldrain
 - Bunkr (bunkr.me)
