@@ -23,7 +23,7 @@ It supports **parallel downloads**, **resume**, **album queueing**, **speed limi
 
 ## Installation
 ```bash
-pip install requests tqdm
+pip install -r requirements.txt
 ```
 
 ## Usage
