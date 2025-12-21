@@ -68,7 +68,7 @@ class PixeldrainAdapter(SiteAdapter):
         j = r.json()
         return j.get("files", [])
 
-    def download_file(file, output_dir):
+    def download_file(self, file, output_dir):
         file_id = file["id"]
         name = file["name"]
         size = file.get("size", 0)
