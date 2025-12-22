@@ -12,9 +12,7 @@ from tqdm import tqdm
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-# =============================
-# CONFIGURATION
-# =============================
+
 HEADERS = {"User-Agent": "MultiHostDownloader/1.0"}
 MAX_WORKERS = 3
 MAX_RETRIES = 5
@@ -22,9 +20,7 @@ RATE_DELAY = 0.3
 SPEED_LIMIT_KB = 512  # 0 = unlimited
 BASE_DIR = "downloads"
 
-# =============================
-# UTILITIES
-# =============================
+
 def safe_name(name):
     name = re.sub(r'[<>:"/\\|?*]', '', name)
     return name.strip() or "Album"
@@ -144,9 +140,9 @@ class BunkrAdapter(SiteAdapter):
         return safe_name(f"Bunkr_{self.album_id}")
 
     def get_files(self):
-        # Simplified: scrape for file links
         r = requests.get(self.url, headers=HEADERS)
-        links = re.findall(r'https://files\.bunkr\.me/[^\s"\']+', r.text)
+        r.raise_for_status()
+        links = re.findall(r'https://files\.bunkr\.\w+/[^\s"\']+', r.text)
         files = [{"id": l.split("/")[-1], "name": l.split("/")[-1], "size": 0, "url": l} for l in links]
         return files
 
@@ -156,13 +152,45 @@ class BunkrAdapter(SiteAdapter):
         path = os.path.join(output_dir, name)
         if os.path.exists(path):
             return "skipped"
-        with requests.get(url, headers=HEADERS, stream=True) as r:
-            r.raise_for_status()
-            with open(path, "wb") as f:
-                for chunk in r.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-        return "downloaded"
+        attempt = 0
+        while attempt < MAX_RETRIES:
+            try:
+                headers = HEADERS.copy()
+                downloaded = 0
+                temp_path = path + ".part"
+                if os.path.exists(temp_path):
+                    downloaded = os.path.getsize(temp_path)
+                    headers["Range"] = f"bytes={downloaded}-"
+
+                with requests.get(url, headers=headers, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    size = int(r.headers.get("Content-Length", 0)) + downloaded
+                    mode = "ab" if downloaded else "wb"
+                    with open(temp_path, mode) as f, tqdm(
+                        total=size if size > 0 else None,
+                        initial=downloaded,
+                        unit="B",
+                        unit_scale=True,
+                        desc=name,
+                        leave=False
+                    ) as bar:
+                        for chunk in r.iter_content(8192):
+                            if chunk:
+                                f.write(chunk)
+                                bar.update(len(chunk))
+
+                os.replace(temp_path, path)
+                time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
+                return "downloaded"
+
+            except Exception as e:
+                attempt += 1
+                wait = 2 ** attempt + random.uniform(0.5, 1.5)
+                print(f"\n❌ Error downloading {name}: {e}, retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
+                time.sleep(wait)
+
+        print(f"\n❌ Gave up on {name}")
+        return "failed"
 
 # -----------------------------
 # K00 Adapter
@@ -203,12 +231,22 @@ class K00Adapter(SiteAdapter):
 # =============================
 # ADAPTER FACTORY
 # =============================
+BUNKR_DOMAINS = [
+    "bunkr.me",
+    "bunkr.cr",
+    "bunkr.site",
+    "bunkr.si",
+    "bunkr.fi"
+]
+
 def get_adapter(url):
-    if "pixeldrain.com" in url:
+    parsed = urlparse(url)
+    netloc = parsed.netloc
+    if "pixeldrain.com" in netloc:
         return PixeldrainAdapter(url)
-    elif "bunkr.me" in url:
+    elif netloc in BUNKR_DOMAINS:
         return BunkrAdapter(url)
-    elif "k00.fr" in url:
+    elif "k00.fr" in netloc:
         return K00Adapter(url)
     else:
         raise ValueError("Site not supported yet")
@@ -237,21 +275,17 @@ def queue_worker(status_cb=print):
             status_cb(f"Error: {e}")
         album_queue.task_done()
 
-# =============================
 # CLI
-# =============================
 def cli_mode():
     for url in sys.argv[1:]:
         album_queue.put(url)
     threading.Thread(target=queue_worker, daemon=True).start()
     album_queue.join()
 
-# =============================
-# GUI
-# =============================
+
 def gui_mode():
     root = tk.Tk()
-    root.title("MultiHost Downloader")
+    root.title("MultiHostDownloader")
     root.geometry("480x260")
     root.configure(bg="#121212")
 
@@ -276,9 +310,7 @@ def gui_mode():
 
     root.mainloop()
 
-# =============================
-# ENTRY POINT
-# =============================
+
 if __name__ == "__main__":
     os.makedirs(BASE_DIR, exist_ok=True)
     if len(sys.argv) > 1:
