@@ -13,7 +13,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 
-HEADERS = {"User-Agent": "MultiHostDownloader/1.0"}
+HEADERS = {"User-Agent": "MegaDL/1.0"}
 MAX_WORKERS = 3
 MAX_RETRIES = 5
 RATE_DELAY = 0.3
@@ -285,7 +285,7 @@ def cli_mode():
 
 def gui_mode():
     root = tk.Tk()
-    root.title("MultiHostDownloader")
+    root.title("MegaDL")
     root.geometry("480x260")
     root.configure(bg="#121212")
 

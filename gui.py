@@ -14,7 +14,7 @@ def on_drop(event):
         status.set("Error")
 
 root = tk.Tk()
-root.title("Pixeldrain Album Downloader")
+root.title("MegaDL")
 root.geometry("420x180")
 
 label = tk.Label(root, text="Drag & drop Pixeldrain album link here",
