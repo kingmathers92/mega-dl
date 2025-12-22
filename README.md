@@ -1,10 +1,6 @@
 # MegaDL
 
-MegaDL is a fast, safe, and user-friendly tool for downloading albums from multiple file hosting services, including:
-
-- Pixeldrain
-- Bunkr (bunkr.me)
-- k00.fr
+MegaDL is a fast, safe, and user-friendly tool for downloading albums from multiple file hosting services
 
 *(Future support for: AnonFiles, File.io, MediaFire, Mega.nz, Zippyshare, Dropbox/Google Drive public links)*
 
