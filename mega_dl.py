@@ -12,15 +12,19 @@ from tqdm import tqdm
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-
-HEADERS = {"User-Agent": "MegaDL/1.0"}
+# =============================
+# CONFIGURATION
+# =============================
+HEADERS = {"User-Agent": "MultiHostDownloader/1.0"}
 MAX_WORKERS = 3
 MAX_RETRIES = 5
 RATE_DELAY = 0.3
 SPEED_LIMIT_KB = 512  # 0 = unlimited
 BASE_DIR = "downloads"
 
-
+# =============================
+# UTILITIES
+# =============================
 def safe_name(name):
     name = re.sub(r'[<>:"/\\|?*]', '', name)
     return name.strip() or "Album"
@@ -72,6 +76,7 @@ class PixeldrainAdapter(SiteAdapter):
         path = os.path.join(output_dir, name)
         temp_path = path + ".part"
 
+        # Check if existing file matches size
         if os.path.exists(path) and size > 0 and os.path.getsize(path) == size:
             return "skipped"
 
@@ -89,10 +94,11 @@ class PixeldrainAdapter(SiteAdapter):
                 url = f"https://pixeldrain.com/api/file/{file_id}"
                 with requests.get(url, headers=headers, stream=True, timeout=60) as r:
                     r.raise_for_status()
+                    total_size = size if size > 0 else int(r.headers.get("Content-Length", 0)) + downloaded
                     mode = "ab" if downloaded else "wb"
 
                     with open(temp_path, mode) as f, tqdm(
-                        total=size if size > 0 else None,
+                        total=total_size,
                         initial=downloaded,
                         unit="B",
                         unit_scale=True,
@@ -100,12 +106,15 @@ class PixeldrainAdapter(SiteAdapter):
                         leave=False
                     ) as bar:
                         for chunk in r.iter_content(8192):
-                            try:
-                                if chunk:
-                                    f.write(chunk)
-                                    bar.update(len(chunk))
-                            except Exception:
-                                print(f"⚠ Chunk error in {name}, continuing...")
+                            if chunk:
+                                start_time = time.time()
+                                f.write(chunk)
+                                bar.update(len(chunk))
+                                elapsed = time.time() - start_time
+                                if SPEED_LIMIT_KB > 0:
+                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
+                                    if elapsed < expected_time:
+                                        time.sleep(expected_time - elapsed)
 
                 os.replace(temp_path, path)
                 time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
@@ -125,7 +134,6 @@ class PixeldrainAdapter(SiteAdapter):
 
         print(f"\n❌ Gave up on {name}")
         return "failed"
-
 
 # -----------------------------
 # Bunkr Adapter
@@ -150,24 +158,34 @@ class BunkrAdapter(SiteAdapter):
         url = file["url"]
         name = file["name"]
         path = os.path.join(output_dir, name)
-        if os.path.exists(path):
-            return "skipped"
+        temp_path = path + ".part"
+
+        # Check existing file size with HEAD request
+        try:
+            head = requests.head(url, headers=HEADERS)
+            size = int(head.headers.get("Content-Length", 0))
+            if os.path.exists(path) and os.path.getsize(path) == size:
+                return "skipped"
+        except Exception:
+            size = 0
+
         attempt = 0
         while attempt < MAX_RETRIES:
             try:
                 headers = HEADERS.copy()
                 downloaded = 0
-                temp_path = path + ".part"
+
                 if os.path.exists(temp_path):
                     downloaded = os.path.getsize(temp_path)
                     headers["Range"] = f"bytes={downloaded}-"
 
                 with requests.get(url, headers=headers, stream=True, timeout=60) as r:
                     r.raise_for_status()
-                    size = int(r.headers.get("Content-Length", 0)) + downloaded
+                    total_size = int(r.headers.get("Content-Length", 0)) + downloaded
                     mode = "ab" if downloaded else "wb"
+
                     with open(temp_path, mode) as f, tqdm(
-                        total=size if size > 0 else None,
+                        total=total_size,
                         initial=downloaded,
                         unit="B",
                         unit_scale=True,
@@ -176,8 +194,14 @@ class BunkrAdapter(SiteAdapter):
                     ) as bar:
                         for chunk in r.iter_content(8192):
                             if chunk:
+                                start_time = time.time()
                                 f.write(chunk)
                                 bar.update(len(chunk))
+                                elapsed = time.time() - start_time
+                                if SPEED_LIMIT_KB > 0:
+                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
+                                    if elapsed < expected_time:
+                                        time.sleep(expected_time - elapsed)
 
                 os.replace(temp_path, path)
                 time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
@@ -213,20 +237,63 @@ class K00Adapter(SiteAdapter):
         url = file["url"]
         name = file["name"]
         path = os.path.join(output_dir, name)
-        if os.path.exists(path):
-            return "skipped"
-        with requests.get(url, headers=HEADERS, stream=True) as r:
-            r.raise_for_status()
-            with open(path, "wb") as f:
-                for chunk in r.iter_content(8192):
-                    if chunk:
-                        f.write(chunk)
-        return "downloaded"
+        temp_path = path + ".part"
 
-# -----------------------------
-# Future: Adapters for AnonFiles, File.io, MediaFire, Mega, Zippyshare, Dropbox
-# -----------------------------
-# Can implement similar classes as above
+        # Check existing file size with HEAD request
+        try:
+            head = requests.head(url, headers=HEADERS)
+            size = int(head.headers.get("Content-Length", 0))
+            if os.path.exists(path) and os.path.getsize(path) == size:
+                return "skipped"
+        except Exception:
+            size = 0
+
+        attempt = 0
+        while attempt < MAX_RETRIES:
+            try:
+                headers = HEADERS.copy()
+                downloaded = 0
+
+                if os.path.exists(temp_path):
+                    downloaded = os.path.getsize(temp_path)
+                    headers["Range"] = f"bytes={downloaded}-"
+
+                with requests.get(url, headers=headers, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    total_size = int(r.headers.get("Content-Length", 0)) + downloaded
+                    mode = "ab" if downloaded else "wb"
+
+                    with open(temp_path, mode) as f, tqdm(
+                        total=total_size,
+                        initial=downloaded,
+                        unit="B",
+                        unit_scale=True,
+                        desc=name,
+                        leave=False
+                    ) as bar:
+                        for chunk in r.iter_content(8192):
+                            if chunk:
+                                start_time = time.time()
+                                f.write(chunk)
+                                bar.update(len(chunk))
+                                elapsed = time.time() - start_time
+                                if SPEED_LIMIT_KB > 0:
+                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
+                                    if elapsed < expected_time:
+                                        time.sleep(expected_time - elapsed)
+
+                os.replace(temp_path, path)
+                time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
+                return "downloaded"
+
+            except Exception as e:
+                attempt += 1
+                wait = 2 ** attempt + random.uniform(0.5, 1.5)
+                print(f"\n❌ Error downloading {name}: {e}, retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
+                time.sleep(wait)
+
+        print(f"\n❌ Gave up on {name}")
+        return "failed"
 
 # =============================
 # ADAPTER FACTORY
@@ -275,17 +342,21 @@ def queue_worker(status_cb=print):
             status_cb(f"Error: {e}")
         album_queue.task_done()
 
+# =============================
 # CLI
+# =============================
 def cli_mode():
     for url in sys.argv[1:]:
         album_queue.put(url)
     threading.Thread(target=queue_worker, daemon=True).start()
     album_queue.join()
 
-
+# =============================
+# GUI
+# =============================
 def gui_mode():
     root = tk.Tk()
-    root.title("MegaDL")
+    root.title("MultiHostDownloader")
     root.geometry("480x260")
     root.configure(bg="#121212")
 
@@ -310,7 +381,9 @@ def gui_mode():
 
     root.mainloop()
 
-
+# =============================
+# ENTRY POINT
+# =============================
 if __name__ == "__main__":
     os.makedirs(BASE_DIR, exist_ok=True)
     if len(sys.argv) > 1:
