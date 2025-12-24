@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import tkinter as tk
 from tkinter import ttk, messagebox
+from mega import Mega
 
 # =============================
 # CONFIGURATION
@@ -295,8 +296,136 @@ class K00Adapter(SiteAdapter):
         print(f"\n❌ Gave up on {name}")
         return "failed"
 
+class SingleFileAdapter(SiteAdapter):
+    def __init__(self, url):
+        self.url = url
+        self.name = urlparse(url).path.split("/")[-1] or "file"
+
+    def get_album_name(self):
+        return safe_name(f"Single_{self.name}")
+
+    def get_files(self):
+        return [{"id": self.name, "name": self.name, "size": 0, "url": self.url}]
+
+    def download_file(self, file, output_dir):
+        url = file["url"]
+        name = file["name"]
+        path = os.path.join(output_dir, name)
+        temp_path = path + ".part"
+
+        try:
+            head = requests.head(url, headers=HEADERS)
+            size = int(head.headers.get("Content-Length", 0))
+            if os.path.exists(path) and os.path.getsize(path) == size:
+                return "skipped"
+        except Exception:
+            size = 0
+
+        attempt = 0
+        while attempt < MAX_RETRIES:
+            try:
+                headers = HEADERS.copy()
+                downloaded = 0
+
+                if os.path.exists(temp_path):
+                    downloaded = os.path.getsize(temp_path)
+                    headers["Range"] = f"bytes={downloaded}-"
+
+                with requests.get(url, headers=headers, stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    total_size = int(r.headers.get("Content-Length", 0)) + downloaded
+                    mode = "ab" if downloaded else "wb"
+
+                    with open(temp_path, mode) as f, tqdm(
+                        total=total_size,
+                        initial=downloaded,
+                        unit="B",
+                        unit_scale=True,
+                        desc=name,
+                        leave=False
+                    ) as bar:
+                        for chunk in r.iter_content(8192):
+                            if chunk:
+                                start_time = time.time()
+                                f.write(chunk)
+                                bar.update(len(chunk))
+                                elapsed = time.time() - start_time
+                                if SPEED_LIMIT_KB > 0:
+                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
+                                    if elapsed < expected_time:
+                                        time.sleep(expected_time - elapsed)
+
+                os.replace(temp_path, path)
+                time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
+                return "downloaded"
+
+            except Exception as e:
+                attempt += 1
+                wait = 2 ** attempt + random.uniform(0.5, 1.5)
+                print(f"\n❌ Error downloading {name}: {e}, retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
+                time.sleep(wait)
+
+        print(f"\n❌ Gave up on {name}")
+        return "failed"
+
+# -----------------------------
+# AnonFiles Adapter (new)
+# -----------------------------
+class AnonFilesAdapter(SiteAdapter):
+    def __init__(self, url):
+        self.url = url
+        parsed = urlparse(url)
+        self.file_id = parsed.path.strip("/").split("/")[-1]
+
+    def get_album_name(self):
+        return safe_name(f"AnonFiles_{self.file_id}")
+
+    def get_files(self):
+        # AnonFiles is single-file, but treat as "album" with one file
+        r = requests.get(f"https://api.anonfiles.com/v2/file/{self.file_id}/info", headers=HEADERS)
+        r.raise_for_status()
+        j = r.json()
+        if not j.get("status"):
+            raise ValueError("Invalid AnonFiles URL")
+        file_info = j["data"]["file"]
+        return [{"id": self.file_id, "name": file_info["metadata"]["name"], "size": file_info["metadata"]["size"]["bytes"], "url": file_info["url"]["full"]}]
+
+    def download_file(self, file, output_dir):
+        # Reuse SingleFileAdapter's download logic for consistency
+        single_adapter = SingleFileAdapter(file["url"])
+        return single_adapter.download_file(file, output_dir)
+
+# -----------------------------
+# Mega Adapter (new)
+# -----------------------------
+class MegaAdapter(SiteAdapter):
+    def __init__(self, url):
+        self.url = url
+        self.mega = Mega().login_anonymous()
+
+    def get_album_name(self):
+        # For simplicity, use URL hash as name
+        parsed = urlparse(self.url)
+        return safe_name(f"Mega_{parsed.fragment or 'file'}")
+
+    def get_files(self):
+        # Mega URLs are typically single files/folders; assume single for now
+        return [{"id": "mega_file", "name": os.path.basename(self.url), "size": 0, "url": self.url}]
+
+    def download_file(self, file, output_dir):
+        name = file["name"]
+        path = os.path.join(output_dir, name)
+        if os.path.exists(path):
+            return "skipped"
+        try:
+            self.mega.download_url(self.url, dest_path=output_dir)
+            return "downloaded"
+        except Exception as e:
+            print(f"\n❌ Error downloading {name} from Mega: {e}")
+            return "failed"
+
 # =============================
-# ADAPTER FACTORY
+# ADAPTER FACTORY (updated for single-file and new sites)
 # =============================
 BUNKR_DOMAINS = [
     "bunkr.me",
@@ -309,13 +438,24 @@ BUNKR_DOMAINS = [
 def get_adapter(url):
     parsed = urlparse(url)
     netloc = parsed.netloc
+    path_parts = parsed.path.strip("/").split("/")
     if "pixeldrain.com" in netloc:
-        return PixeldrainAdapter(url)
+        if len(path_parts) >= 2 and path_parts[0] == "l":
+            return PixeldrainAdapter(url)
+        elif len(path_parts) >= 2 and path_parts[0] == "u":
+            return SingleFileAdapter(url)  # Single file on Pixeldrain
     elif netloc in BUNKR_DOMAINS:
         return BunkrAdapter(url)
     elif "k00.fr" in netloc:
         return K00Adapter(url)
+    elif "anonfiles.com" in netloc:
+        return AnonFilesAdapter(url)
+    elif "mega.nz" in netloc or "mega.co.nz" in netloc:
+        return MegaAdapter(url)
     else:
+        # Fallback to single file if direct link (e.g., https://example.com/file.ext)
+        if parsed.path.endswith(('.zip', '.mp4', '.jpg', '.png', '.pdf')):  # Add more extensions as needed
+            return SingleFileAdapter(url)
         raise ValueError("Site not supported yet")
 
 # =============================
