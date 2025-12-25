@@ -12,6 +12,8 @@ from tqdm import tqdm
 import tkinter as tk
 from tkinter import ttk, messagebox
 from mega import Mega
+import argparse
+import zipfile
 
 # =============================
 # CONFIGURATION
@@ -486,10 +488,53 @@ def queue_worker(status_cb=print):
 # CLI
 # =============================
 def cli_mode():
-    for url in sys.argv[1:]:
+    parser = argparse.ArgumentParser(description="MultiHost Downloader CLI")
+    parser.add_argument("urls", nargs="*", help="Album or file URLs")
+    parser.add_argument("--file", help="Text file with URLs (one per line)")
+    parser.add_argument("--unzip", action="store_true", help="Unzip downloaded .zip files")
+    args = parser.parse_args()
+
+    urls = args.urls
+    if args.file:
+        with open(args.file, "r") as f:
+            urls.extend([line.strip() for line in f if line.strip()])
+
+    for url in urls:
         album_queue.put(url)
-    threading.Thread(target=queue_worker, daemon=True).start()
+
+    threading.Thread(target=queue_worker, args=(print, args.unzip), daemon=True).start()  # Pass unzip flag
     album_queue.join()
+
+# =============================
+# ALBUM QUEUE & WORKER (updated for unzip)
+# =============================
+def queue_worker(status_cb=print, unzip=False):
+    while True:
+        url = album_queue.get()
+        if url is None:
+            break
+        try:
+            adapter = get_adapter(url)
+            album_name = adapter.get_album_name()
+            files = adapter.get_files()
+            output_dir = os.path.join(BASE_DIR, album_name)
+            os.makedirs(output_dir, exist_ok=True)
+
+            with ThreadPoolExecutor(MAX_WORKERS) as ex:
+                results = list(ex.map(lambda f: adapter.download_file(f, output_dir), files))
+
+            if unzip:
+                for file in files:
+                    path = os.path.join(output_dir, file["name"])
+                    if path.endswith(".zip") and os.path.exists(path):
+                        with zipfile.ZipFile(path, "r") as z:
+                            z.extractall(output_dir)
+                        os.remove(path)  # Optional: remove zip after extract
+
+            status_cb(f"Album '{album_name}' done: {results.count('downloaded')} downloaded, {results.count('skipped')} skipped")
+        except Exception as e:
+            status_cb(f"Error: {e}")
+        album_queue.task_done()
 
 # =============================
 # GUI
