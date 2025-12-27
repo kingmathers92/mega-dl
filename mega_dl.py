@@ -562,11 +562,11 @@ def cli_mode():
 # =============================
 # GUI
 # =============================
+
 def gui_mode():
     root = tk.Tk()
     root.title("MultiHostDownloader")
-    root.geometry("480x260")
-    root.configure(bg="#121212")
+    root.geometry("480x400")
 
     tk.Label(root, text="Drag & drop album URLs here", bg="#121212", fg="#ffffff", font=("Arial", 12)).pack(pady=20)
 
@@ -576,16 +576,41 @@ def gui_mode():
     entry = tk.Entry(root, width=50)
     entry.pack(pady=10)
 
+    queue_list = tk.Listbox(root, height=5, width=50)
+    queue_list.pack(pady=10)
+
+    progress = ttk.Progressbar(root, mode="indeterminate")
+    progress.pack(pady=10)
+
+    pause_event = threading.Event()
+    pause_event.set()
+
     def add_album():
         url = entry.get().strip()
         if url:
             album_queue.put(url)
+            queue_list.insert(tk.END, url)
             status.set(f"Queued: {url}")
             entry.delete(0, tk.END)
 
-    tk.Button(root, text="Add to Queue", command=add_album, bg="#1f4e5f", fg="#ffffff").pack(pady=10)
+    tk.Button(root, text="Add to Queue", command=add_album, bg="#1f4e5f", fg="#ffffff").pack(pady=5)
 
-    threading.Thread(target=queue_worker, args=(lambda s: status.set(s), False, None, MAX_WORKERS), daemon=True).start()
+    def pause_resume():
+        if pause_event.is_set():
+            pause_event.clear()
+            status.set("Paused")
+        else:
+            pause_event.set()
+            status.set("Resumed")
+
+    tk.Button(root, text="Pause/Resume", command=pause_resume, bg="#1f4e5f", fg="#ffffff").pack(pady=5)
+
+    def worker_with_progress(status_cb):
+        progress.start()
+        queue_worker(status_cb)
+        progress.stop()
+
+    threading.Thread(target=worker_with_progress, args=(lambda s: status.set(s),), daemon=True).start()
 
     root.mainloop()
 
