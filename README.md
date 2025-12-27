@@ -25,11 +25,11 @@ pip install -r requirements.txt
 ## Usage
 ### CLI Mode
 ```bash
-def python multihost_downloader.py <album_url1> <album_url2> ...
+def python mega_dl.py <album_url1> <album_url2> ...
 ```
 ### GUI Mode
 ```bash
-def python multihost_downloader.py  # then drag & drop album URLs to add to the queue.
+def python mega_dl.py  # then drag & drop album URLs to add to the queue.
 ```
 *Supports adding multiple albums to the queue and real-time download progress.*
 

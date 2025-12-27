@@ -18,7 +18,7 @@ import zipfile
 # =============================
 # CONFIGURATION
 # =============================
-HEADERS = {"User-Agent": "MultiHostDownloader/1.0"}
+HEADERS = {"User-Agent": "MegaDL/1.0"}
 MAX_WORKERS = os.cpu_count() // 2 or 3
 MAX_RETRIES = 5
 RATE_DELAY = 0.3
@@ -538,7 +538,7 @@ def queue_worker(status_cb=print, unzip=False, proxies=None, max_workers=MAX_WOR
 # CLI
 # =============================
 def cli_mode():
-    parser = argparse.ArgumentParser(description="MultiHost Downloader CLI")
+    parser = argparse.ArgumentParser(description="MegaDL CLI")
     parser.add_argument("--max-workers", type=int, default=MAX_WORKERS, help="Max concurrent downloads")
     parser.add_argument("--proxy", help="Proxy URL (e.g., http://proxy:port)")
     parser.add_argument("urls", nargs="*", help="Album or file URLs")
@@ -565,7 +565,7 @@ def cli_mode():
 
 def gui_mode():
     root = tk.Tk()
-    root.title("MultiHostDownloader")
+    root.title("MegaDL")
     root.geometry("480x400")
 
     tk.Label(root, text="Drag & drop album URLs here", bg="#121212", fg="#ffffff", font=("Arial", 12)).pack(pady=20)
