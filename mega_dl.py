@@ -19,11 +19,13 @@ import zipfile
 # CONFIGURATION
 # =============================
 HEADERS = {"User-Agent": "MegaDL/1.0"}
-MAX_WORKERS = os.cpu_count() // 2 or 3
+MAX_WORKERS = min(8, (os.cpu_count() or 4) * 2)
 MAX_RETRIES = 5
 RATE_DELAY = 0.3
 SPEED_LIMIT_KB = 512  # 0 = unlimited
 BASE_DIR = "downloads"
+pause_event = threading.Event()
+pause_event.set()
 
 # =============================
 # UTILITIES
@@ -113,15 +115,16 @@ class PixeldrainAdapter(SiteAdapter):
                         leave=False
                     ) as bar:
                         for chunk in r.iter_content(8192):
-                            if chunk:
-                                start_time = time.time()
-                                f.write(chunk)
-                                bar.update(len(chunk))
-                                elapsed = time.time() - start_time
-                                if SPEED_LIMIT_KB > 0:
-                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
-                                    if elapsed < expected_time:
-                                        time.sleep(expected_time - elapsed)
+                            if not chunk:
+                                continue
+
+                            # PAUSE HANDLING
+                            while not pause_event.is_set():
+                                time.sleep(0.2)
+
+                            start_time = time.time()
+                            f.write(chunk)
+                            bar.update(len(chunk))
 
                 os.replace(temp_path, path)
                 time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
@@ -204,15 +207,16 @@ class BunkrAdapter(SiteAdapter):
                         leave=False
                     ) as bar:
                         for chunk in r.iter_content(8192):
-                            if chunk:
-                                start_time = time.time()
-                                f.write(chunk)
-                                bar.update(len(chunk))
-                                elapsed = time.time() - start_time
-                                if SPEED_LIMIT_KB > 0:
-                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
-                                    if elapsed < expected_time:
-                                        time.sleep(expected_time - elapsed)
+                            if not chunk:
+                                continue
+
+                            # 🔴 PAUSE HANDLING
+                            while not pause_event.is_set():
+                                time.sleep(0.2)
+
+                            start_time = time.time()
+                            f.write(chunk)
+                            bar.update(len(chunk))
 
                 os.replace(temp_path, path)
                 time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
@@ -293,15 +297,16 @@ class K00Adapter(SiteAdapter):
                         leave=False
                     ) as bar:
                         for chunk in r.iter_content(8192):
-                            if chunk:
-                                start_time = time.time()
-                                f.write(chunk)
-                                bar.update(len(chunk))
-                                elapsed = time.time() - start_time
-                                if SPEED_LIMIT_KB > 0:
-                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
-                                    if elapsed < expected_time:
-                                        time.sleep(expected_time - elapsed)
+                            if not chunk:
+                                continue
+
+                            # 🔴 PAUSE HANDLING
+                            while not pause_event.is_set():
+                                time.sleep(0.2)
+
+                            start_time = time.time()
+                            f.write(chunk)
+                            bar.update(len(chunk))
 
                 os.replace(temp_path, path)
                 time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
@@ -378,15 +383,16 @@ class SingleFileAdapter(SiteAdapter):
                         leave=False
                     ) as bar:
                         for chunk in r.iter_content(8192):
-                            if chunk:
-                                start_time = time.time()
-                                f.write(chunk)
-                                bar.update(len(chunk))
-                                elapsed = time.time() - start_time
-                                if SPEED_LIMIT_KB > 0:
-                                    expected_time = len(chunk) / (SPEED_LIMIT_KB * 1024)
-                                    if elapsed < expected_time:
-                                        time.sleep(expected_time - elapsed)
+                            if not chunk:
+                                continue
+
+                            # 🔴 PAUSE HANDLING
+                            while not pause_event.is_set():
+                                time.sleep(0.2)
+
+                            start_time = time.time()
+                            f.write(chunk)
+                            bar.update(len(chunk))
 
                 os.replace(temp_path, path)
                 time.sleep(RATE_DELAY + random.uniform(0.1, 0.5))
