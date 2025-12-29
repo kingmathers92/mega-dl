@@ -122,7 +122,6 @@ class PixeldrainAdapter(SiteAdapter):
                             while not pause_event.is_set():
                                 time.sleep(0.2)
 
-                            start_time = time.time()
                             f.write(chunk)
                             bar.update(len(chunk))
 
@@ -210,11 +209,10 @@ class BunkrAdapter(SiteAdapter):
                             if not chunk:
                                 continue
 
-                            # 🔴 PAUSE HANDLING
+                            # PAUSE HANDLING
                             while not pause_event.is_set():
                                 time.sleep(0.2)
 
-                            start_time = time.time()
                             f.write(chunk)
                             bar.update(len(chunk))
 
@@ -300,11 +298,10 @@ class K00Adapter(SiteAdapter):
                             if not chunk:
                                 continue
 
-                            # 🔴 PAUSE HANDLING
+                            # PAUSE HANDLING
                             while not pause_event.is_set():
                                 time.sleep(0.2)
 
-                            start_time = time.time()
                             f.write(chunk)
                             bar.update(len(chunk))
 
@@ -386,11 +383,10 @@ class SingleFileAdapter(SiteAdapter):
                             if not chunk:
                                 continue
 
-                            # 🔴 PAUSE HANDLING
+                            # PAUSE HANDLING
                             while not pause_event.is_set():
                                 time.sleep(0.2)
 
-                            start_time = time.time()
                             f.write(chunk)
                             bar.update(len(chunk))
 
@@ -587,9 +583,6 @@ def gui_mode():
 
     progress = ttk.Progressbar(root, mode="indeterminate")
     progress.pack(pady=10)
-
-    pause_event = threading.Event()
-    pause_event.set()
 
     def add_album():
         url = entry.get().strip()
